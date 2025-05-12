@@ -225,6 +225,202 @@ if st.button('Preprocess Data'):
 
 ##########################  Classification ###############################
 
+# 🚀 Install if not already done:
+# pip install pandas numpy scikit-learn xgboost imbalanced-learn tensorflow joblib streamlit openpyxl
+
+import streamlit as st
+import numpy as np
+import pandas as pd
+import joblib
+import tensorflow as tf
+import os
+import random
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from imblearn.over_sampling import SMOTE
+from xgboost import XGBClassifier
+from sklearn.ensemble import VotingClassifier
+from scikeras.wrappers import KerasClassifier
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from collections import Counter
+
+# ---------------------
+# ⚙️ Set random seed
+# ---------------------
+def set_random_seed(seed=42):
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+    random.seed(seed)
+# ---------------------
+# 🔮 Prediction Function
+# ---------------------
+def predict_future_breakdown(test_file_path, model_folder_path):
+    set_random_seed(seed=42)
+    df = pd.read_excel(test_file_path)
+    X = df.iloc[:, 3:-1].values  # All features
+
+    scaler = joblib.load(os.path.join(model_folder_path, "scaler_shifted.pkl"))
+    X_scaled = scaler.transform(X)
+
+    model = joblib.load(os.path.join(model_folder_path, "ensemble_shifted_model.pkl"))
+    preds = model.predict(X_scaled)
+
+    labels = ["Code 0", "Code 1", "Code 2"]
+    result_labels = [labels[p] for p in preds]
+
+    non_zero = [lbl for lbl in result_labels if lbl != "Code 0"]
+    if non_zero:
+        return f"🚨 Potential Breakdown(s): {', '.join(set(non_zero))}"
+    else:
+        return "✅ No BD predicted"
+
+# ---------------------
+# 🌐 Streamlit UI
+# ---------------------
+st.title("🔮 Predict Breakdown")
+
+
+if st.button("Predict Breakdown"):
+    if test_file_path:
+        with st.spinner("Predicting..."):
+            result = predict_future_breakdown(test_file_path, model_folder_path)
+            st.subheader("🔍 Result:")
+            st.write(result)
+            st.session_state["bd_output"] = result
+            
+            if result != "✅ No BD predicted":
+                st.session_state["check_bd_clicked"] = True
+            else:
+                st.session_state["check_bd_clicked"] = False
+    else:
+        st.warning("Please upload today's data for prediction.")
+
+
+
+
+# ################################        time prediction             #############################
+import streamlit as st
+import os
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.callbacks import EarlyStopping
+import joblib
+from datetime import datetime
+import numpy as np
+
+
+# Function to set random seed for reproducibility
+def set_random_seed(seed=42):
+    np.random.seed(seed)
+    
+
+
+
+# Define the prediction function
+def predict_time(test_file_path):
+    def load_test_data(file_path):
+        df = pd.read_excel(file_path)
+        serial_numbers = df.iloc[:, 2].values
+        times = df.iloc[:, 1].values
+        X_test = df.iloc[:, 3:-1].values
+        return df, X_test, serial_numbers, times
+
+    def preprocess_test_data(X_test):
+        scaler = joblib.load(os.path.join(model_folder_path, 'scaler_time_changed.pkl'))
+        X_test_scaled = scaler.transform(X_test)
+        return X_test_scaled
+
+    def predict_time_to_breakdown(X_test_scaled):
+        model = load_model(os.path.join(model_folder_path, 'trained_time_changed.h5'))
+        predictions = model.predict(X_test_scaled)
+        return predictions
+
+    def calculate_time_difference(times, predictions):
+        time_to_breakdown_with_time = []
+        base_time = datetime.strptime(times[0],'%I:%M %p')
+        for time_str, prediction in zip(times, predictions):
+            time_obj = datetime.strptime(time_str, '%I:%M %p')
+            #midnight = datetime.combine(time_obj.date(), datetime.min.time())
+            time_difference = (time_obj - base_time).total_seconds() / 3600
+            adjusted_time_to_bd = prediction[0] + time_difference
+            time_to_breakdown_with_time.append(adjusted_time_to_bd)
+        return time_to_breakdown_with_time
+    #CHANGE.........................................................................................................................
+    def find_minimum_maximum_and_mode_interval(time_to_breakdown_with_time):
+        # Filter out negative times
+        positive_times = [time for time in time_to_breakdown_with_time if time >= 0]
+    
+        if not positive_times:
+            return None, None, None, None  # Handle no positive breakdown times case
+    
+        # Calculate minimum and maximum times
+        min_time = min(positive_times)
+        max_time = max(positive_times)
+    
+        # Define intervals of 5 units
+        interval_start = min_time
+        interval_end = max_time + 5  # Extend range to include the last value
+        bins = []
+        frequencies = []
+    
+        while interval_start < interval_end:
+            # Create interval range
+            interval = (interval_start, interval_start + 5)
+            bins.append(interval)
+    
+            # Count occurrences within the interval
+            frequency = sum(1 for time in positive_times if interval[0] <= time < interval[1])
+            frequencies.append(frequency)
+    
+            # Move to the next interval
+            interval_start += 5
+    
+        # Find the mode interval (highest frequency)
+        max_frequency = max(frequencies)
+        mode_index = frequencies.index(max_frequency)
+        mode_interval = bins[mode_index]
+    
+        return min_time, max_time, mode_interval, max_frequency
+
+   
+    try:
+        # Load and preprocess the test data
+        df, X_test, serial_numbers, times = load_test_data(test_file_path)
+        X_test_scaled = preprocess_test_data(X_test)
+    
+        # Make predictions
+        predictions = predict_time_to_breakdown(X_test_scaled)
+        predictions_with_time = calculate_time_difference(times, predictions)
+    
+        # Find the minimum, maximum, and mode interval
+        min_time, max_time, mode_interval, mode_frequency = find_minimum_maximum_and_mode_interval(predictions_with_time)    
+        final_output_time = 0.4 * min_time + 0.6 * max_time
+        # Return the final breakdown time
+        return (f"Breakdown might occur in approximately w.r.t 6 AM Data date: \n"
+        f"{final_output_time:.2f} hours")
+
+    except Exception as e:
+        return f"Error: {e}"
+# Streamlit app UI
+st.title("Time Prediction")
+
+
+#....CHANGED........................................................................................................................................
+
+
+if st.button(("Predict Time"), disabled=not st.session_state["check_bd_clicked"]):
+    if st.session_state["bd_output"] == "No BD predicted":
+         st.error("No breakdown predicted. Cannot proceed with time prediction.")
+    else:
+         with st.spinner("Training the model and making predictions..."):
+             #train_model(training_file_path)
+             result = predict_time(test_file_path)  # Predict time using predefined test data
+         st.write(f"Predicted Time to Breakdown: {result}")
+         st.success("Prediction complete!")
 
 
 
