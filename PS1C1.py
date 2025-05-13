@@ -42,7 +42,7 @@ model_folder_path = os.path.join(MAINFOLDER, "Models")
 uploaded_files = []  # List to keep track of uploaded files
 
 # Streamlit UI
-st.title("Breakdown Predictor")
+st.title("Breakdown Predictor -Paint Shop 1(C1)")
 st.markdown("Upload your files, and they will be preprocessed accordingly.")
 
 
